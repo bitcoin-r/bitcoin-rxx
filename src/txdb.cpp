@@ -1,5 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2015 The Bitcoin Core developers
+// Copyright (c) 2015-2017 The Bitcoin Unlimited developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -103,7 +104,12 @@ bool CCoinsViewDB::GetStats(CCoinsStats &stats) const {
     pcursor->Seek(DB_COINS);
 
     CHashWriter ss(SER_GETHASH, PROTOCOL_VERSION);
-    stats.hashBlock = GetBestBlock();
+    
+    {
+      LOCK(cs_main);
+      stats.hashBlock = GetBestBlock();
+      stats.nHeight = mapBlockIndex.find(stats.hashBlock)->second->nHeight;
+    }
     ss << stats.hashBlock;
     CAmount nTotalAmount = 0;
     while (pcursor->Valid()) {
@@ -131,10 +137,6 @@ bool CCoinsViewDB::GetStats(CCoinsStats &stats) const {
             break;
         }
         pcursor->Next();
-    }
-    {
-        LOCK(cs_main);
-        stats.nHeight = mapBlockIndex.find(stats.hashBlock)->second->nHeight;
     }
     stats.hashSerialized = ss.GetHash();
     stats.nTotalAmount = nTotalAmount;

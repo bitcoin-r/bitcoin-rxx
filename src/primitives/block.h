@@ -1,5 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2015 The Bitcoin Core developers
+// Copyright (c) 2015-2017 The Bitcoin Unlimited developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -11,7 +12,7 @@
 #include "uint256.h"
 
 const uint32_t BIP_009_MASK = 0x20000000;
-const uint32_t BASE_VERSION = 0x20000000;  // Will accept 2MB blocks
+const uint32_t BASE_VERSION = 0x20000000;
 const uint32_t FORK_BIT_2MB = 0x10000000;  // Vote for 2MB fork
 const bool DEFAULT_2MB_VOTE = false;
 
@@ -28,6 +29,7 @@ public:
     static const int32_t CURRENT_VERSION = BASE_VERSION;
 
     // header
+    static const int32_t CURRENT_VERSION=BASE_VERSION;
     int32_t nVersion;
     uint256 hashPrevBlock;
     uint256 hashMerkleRoot;
@@ -55,7 +57,7 @@ public:
 
     void SetNull()
     {
-        nVersion = CBlockHeader::CURRENT_VERSION;
+        nVersion = 0;
         hashPrevBlock.SetNull();
         hashMerkleRoot.SetNull();
         nTime = 0;
@@ -84,7 +86,10 @@ public:
     std::vector<CTransaction> vtx;
 
     // memory only
+        // 0.11: mutable std::vector<uint256> vMerkleTree;
     mutable bool fChecked;
+    mutable bool fExcessive;  // BU: is the block "excessive" (bigger than this node prefers to accept)
+    mutable uint64_t nBlockSize; // BU: length of this block in bytes
 
     CBlock()
     {
@@ -110,7 +115,7 @@ public:
         }
         return false;
     }
-
+    
     ADD_SERIALIZE_METHODS;
 
     template <typename Stream, typename Operation>
@@ -123,7 +128,10 @@ public:
     {
         CBlockHeader::SetNull();
         vtx.clear();
+        // vMerkleTree.clear();
         fChecked = false;
+        fExcessive = false;
+        nBlockSize = 0;
     }
 
     CBlockHeader GetBlockHeader() const

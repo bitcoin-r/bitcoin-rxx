@@ -1,5 +1,6 @@
 // Copyright (c) 2010 Satoshi Nakamoto
 // Copyright (c) 2009-2015 The Bitcoin Core developers
+// Copyright (c) 2015-2017 The Bitcoin Unlimited developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -606,45 +607,17 @@ static UniValue SoftForkDesc(const std::string &name, int version, CBlockIndex* 
     return rv;
 }
 
-static UniValue HardForkMajorityDesc(int minVersion, CBlockIndex* pindex, int nRequired, const Consensus::Params& consensusParams)
-{
-    uint32_t forkTime = sizeForkTime.load();
-    bool isHardForkActive = forkTime < std::numeric_limits<uint32_t>::max();
-    int nFound = 0;
-    UniValue gracePeriodEnds;
-    UniValue triggeredAtBlock;
-    CBlockIndex* pstart = pindex;
-    if (isHardForkActive) {
-        // Always report blocks found as over the threshold once the fork is active
-        nFound = nRequired + 1;
-        gracePeriodEnds = static_cast<uint64_t>(forkTime);
-        uint256 activationHash = pblocktree->ForkBitActivated(FORK_BIT_2MB);
-        assert(activationHash != uint256());
-        triggeredAtBlock = activationHash.GetHex();
-    } else {
-        for (int i = 0; i < consensusParams.nMajorityWindow && pstart != NULL; i++)
-        {
-            if (pstart->nVersion >= minVersion)
-                ++nFound;
-            pstart = pstart->pprev;
-        }
-    }
-
-    UniValue rv(UniValue::VOBJ);
-    rv.push_back(Pair("triggeredatblock", triggeredAtBlock));
-    rv.push_back(Pair("earliestforktime", gracePeriodEnds));
-    rv.push_back(Pair("found", nFound));
-    rv.push_back(Pair("required", nRequired));
-    rv.push_back(Pair("window", consensusParams.nMajorityWindow));
-    return rv;
-}
-
-static UniValue HardForkDesc(const std::string &name, int version, CBlockIndex* pindex, const Consensus::Params& consensusParams)
+static UniValue BIP9SoftForkDesc(const std::string& name, const Consensus::Params& consensusParams, Consensus::DeploymentPos id)
 {
     UniValue rv(UniValue::VOBJ);
     rv.push_back(Pair("id", name));
-    rv.push_back(Pair("version", version));
-    rv.push_back(Pair("status", HardForkMajorityDesc(version, pindex, consensusParams.nMajorityEnforceBlockUpgrade, consensusParams)));
+    switch (VersionBitsTipState(consensusParams, id)) {
+    case THRESHOLD_DEFINED: rv.push_back(Pair("status", "defined")); break;
+    case THRESHOLD_STARTED: rv.push_back(Pair("status", "started")); break;
+    case THRESHOLD_LOCKED_IN: rv.push_back(Pair("status", "locked_in")); break;
+    case THRESHOLD_ACTIVE: rv.push_back(Pair("status", "active")); break;
+    case THRESHOLD_FAILED: rv.push_back(Pair("status", "failed")); break;
+    }
     return rv;
 }
 
@@ -678,6 +651,12 @@ UniValue getblockchaininfo(const UniValue& params, bool fHelp)
             "        },\n"
             "        \"reject\": { ... }      (object) progress toward rejecting pre-softfork blocks (same fields as \"enforce\")\n"
             "     }, ...\n"
+            "  ],\n"
+            "  \"bip9_softforks\": [       (array) status of BIP9 softforks in progress\n"
+            "     {\n"
+            "        \"id\": \"xxxx\",        (string) name of the softfork\n"
+            "        \"status\": \"xxxx\",    (string) one of \"defined\", \"started\", \"lockedin\", \"active\", \"failed\"\n"
+            "     }\n"
             "  ]\n"
             "  \"hardforks\": [            (array) status of hardforks in progress\n"
             "     {\n"
@@ -715,10 +694,13 @@ UniValue getblockchaininfo(const UniValue& params, bool fHelp)
     const Consensus::Params& consensusParams = Params().GetConsensus();
     CBlockIndex* tip = chainActive.Tip();
     UniValue softforks(UniValue::VARR);
+    UniValue bip9_softforks(UniValue::VARR);
     softforks.push_back(SoftForkDesc("bip34", 2, tip, consensusParams));
     softforks.push_back(SoftForkDesc("bip66", 3, tip, consensusParams));
     softforks.push_back(SoftForkDesc("bip65", 4, tip, consensusParams));
+    bip9_softforks.push_back(BIP9SoftForkDesc("csv", consensusParams, Consensus::DEPLOYMENT_CSV));
     obj.push_back(Pair("softforks",             softforks));
+    obj.push_back(Pair("bip9_softforks", bip9_softforks));
 
     UniValue hardforks(UniValue::VARR);
     hardforks.push_back(HardForkDesc("bip109", 0x01000000, tip, consensusParams));

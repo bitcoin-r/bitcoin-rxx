@@ -1,4 +1,5 @@
 // Copyright (c) 2014-2015 The Bitcoin Core developers
+// Copyright (c) 2015-2017 The Bitcoin Unlimited developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -14,8 +15,8 @@
 
 using namespace std;
 
-static CCriticalSection cs_nTimeOffset;
-static int64_t nTimeOffset = 0;
+extern CCriticalSection cs_nTimeOffset;
+extern int64_t nTimeOffset;
 
 /**
  * "Never go to sea with two chronometers; take one or three."
@@ -99,7 +100,7 @@ void AddTimeData(const CNetAddr& ip, int64_t nOffsetSample)
                 if (!fMatch)
                 {
                     fDone = true;
-                    string strMessage = _("Please check that your computer's date and time are correct! If your clock is wrong Bitcoin Classic will not work properly.");
+                    string strMessage = _("Please check that your computer's date and time are correct! If your clock is wrong Bitcoin will not work properly.");
                     strMiscWarning = strMessage;
                     uiInterface.ThreadSafeMessageBox(strMessage, "", CClientUIInterface::MSG_WARNING);
                 }

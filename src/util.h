@@ -1,5 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2015 The Bitcoin Core developers
+// Copyright (c) 2015-2017 The Bitcoin Unlimited developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -28,8 +29,20 @@
 #include <boost/signals2/signal.hpp>
 #include <boost/thread/exceptions.hpp>
 
+#ifdef DEBUG_ASSERTION
+/// If DEBUG_ASSERTION is enabled this asserts when the predicate is false.
+//  If DEBUG_ASSERTION is disabled and the predicate is false, it executes the execInRelease statements.
+//  Typically, the programmer will error out -- return false, raise an exception, etc in the execInRelease code.
+//  DO NOT USE break or continue inside the DbgAssert!
+#define DbgAssert(pred, execInRelease) assert(pred)
+#else
+#define DbgStringify(x) #x
+#define DbgStringifyIntLiteral(x) DbgStringify(x)
+#define DbgAssert(pred, execInRelease) do { if (!(pred)) { LogPrintStr(std::string(__FILE__ "(" DbgStringifyIntLiteral(__LINE__) "): Debug Assertion failed: \"" #pred "\"\n")); execInRelease; }} while(0)
+#endif
+
 static const bool DEFAULT_LOGTIMEMICROS = false;
-static const bool DEFAULT_LOGIPS        = false;
+static const bool DEFAULT_LOGIPS        = true;
 static const bool DEFAULT_LOGTIMESTAMPS = true;
 
 /** Signals for translation. */

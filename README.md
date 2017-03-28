@@ -1,92 +1,69 @@
-Bitcoin Classic integration/staging tree
-=====================================
+[Website](https://www.bitcoinunlimited.info)  | [Download](https://www.bitcoinunlimited.info/download) | [Setup](doc/README.md)  |  [Xthin](doc/bu-xthin.md)  |  [Xpedited](doc/bu-xpedited-forwarding.md)  |   [Miner](doc/miner.md)
 
-[![Build Status](https://travis-ci.org/bitcoinclassic/bitcoinclassic.svg?branch=master)](https://travis-ci.org/bitcoinclassic/bitcoinclassic)
-
-https://bitcoinclassic.com
+[![Build Status](https://travis-ci.org/BitcoinUnlimited/BitcoinUnlimited.svg?branch=release)](https://travis-ci.org/BitcoinUnlimited/BitcoinUnlimited)
 
 What is Bitcoin?
-----------------
+=====================================
 
 Bitcoin is an experimental new digital currency that enables instant payments to
 anyone, anywhere in the world. Bitcoin uses peer-to-peer technology to operate
 with no central authority: managing transactions and issuing money are carried
-out collectively by the network.
+out collectively by the network. Bitcoin Unlimited is the name of open source
+software which enables the use of this currency.
 
 For more information, as well as an immediately useable, binary version of
-the Bitcoin Classic software, see https://bitcoinclassic.com.
-
-What is Bitcoin Classic?
-------------------------
-
-Bitcoin Classic is currently a one-time increase in total amount of transaction data permitted in a block from 1MB to 2MB, with limits on signature operations and hashing. We will have ports for master and 0.11.2, so that miners and businesses can upgrade to 2 MB blocks from any recent bitcoin software version they run.
-
-Read the [block size increase BIP](https://github.com/gavinandresen/bips/blob/92e1efd0493c1cbde47304c9711f13f413cc9099/bip-bump2mb.mediawiki) for more information.
-
-In the future Bitcoin Classic will continue to release updates that are in line with Satoshi’s whitepaper & vision, and are agreed upon by the community.
+the Bitcoin Unlimited software, see https://www.bitcoinunlimited.info/download, or read the
+[original whitepaper](https://www.bitcoinunlimited.info/resources/bitcoin.pdf).
 
 License
 -------
 
-Bitcoin Classic is released under the terms of the MIT license. See [COPYING](COPYING) for more
+Bitcoin Unlimited is released under the terms of the MIT license. See [COPYING](COPYING) for more
 information or see https://opensource.org/licenses/MIT.
 
-Development Process
--------------------
+What is Bitcoin Unlimited?
+=====================================
 
-The `master` branch is regularly built and tested, but is not guaranteed to be
-completely stable. [Tags](https://github.com/bitcoinclassic/bitcoinclassic/tags) are created
-regularly to indicate new official, stable release versions of Bitcoin Classic.
+Bitcoin Unlimited is an implementation of the Bitcoin client software that is based on Bitcoin Core.
+However, Bitcoin Unlimited has a very different philosophy than Core.
 
-The contribution workflow is described in [CONTRIBUTING.md](CONTRIBUTING.md).
+It follows a philosophy and is administered by a formal process described in the [Articles of Federation](http://www.bitcoinunlimited.info/resources/BUarticles.pdf).
+In short, we believe in market-driven decision making, emergent consensus, and giving our users choices.
 
-Complicated or controversial changes should be discussed within the communtiy before working on a patch set.
+Quick installation Instructions
+====================================
 
-Community
----------
+If you're running an Ubuntu system:
 
-- Primary Website: https://bitcoinclassic.com/
-- Slack: http://invite.bitcoinclassic.com/
-- Reddit: https://www.reddit.com/r/Bitcoin_Classic/
-- GitHub: https://github.com/bitcoinclassic
-- ConsiderIt (issue voting): https://bitcoinclassic.consider.it/
+```sh
+sudo apt-get install software-properties-common
+sudo add-apt-repository ppa:bitcoin-unlimited/bu-ppa
+sudo apt-get update
+sudo apt-get install bitcoind bitcoin-qt
+```
+If you're compiling from source:
 
-Testing
--------
+```sh
+sudo apt-get install git build-essential libtool autotools-dev automake pkg-config libssl-dev libevent-dev bsdmainutils libboost-all-dev
+## optional: only needed if you want bitcoin-qt
+sudo apt-get install libqt4-dev libprotobuf-dev protobuf-compiler libqrencode-dev
+## optional: only needed if your wallet use the old format
+sudo apt-get install software-properties-common
 
-Testing and code review is the bottleneck for development; we get more pull
-requests than we can review and test on short notice. Please be patient and help out by testing
-other people's pull requests, and remember this is a security-critical project where any mistake might cost people
-lots of money.
+## this not needed if your wallet will use the new
+## format, ot if you're not going to use a wallet at all
+sudo add-apt-repository ppa:bitcoin-unlimited/bu-ppa
+sudo apt-get update
+sudo apt-get install libdb4.8-dev libdb4.8++-dev
 
-### Automated Testing
+mkdir -p ~/src
+cd ~/src
+git clone https://github.com/BitcoinUnlimited/BitcoinUnlimited.git bu-src
+cd bu-src
+./autogen.sh
+./configure
+make
+sudo make install
+```
 
-Developers are strongly encouraged to write [unit tests](/doc/unit-tests.md) for new code, and to
-submit new unit tests for old code. Unit tests can be compiled and run
-(assuming they weren't disabled in configure) with: `make check`
-
-There are also [regression and integration tests](/qa) of the RPC interface, written
-in Python, that are run automatically on the build server.
-These tests can be run with: `qa/pull-tester/rpc-tests.py`
-
-The Travis CI system makes sure that every pull request is built for Windows
-and Linux, OSX, and that unit and sanity tests are automatically run.
-
-### Manual Quality Assurance (QA) Testing
-
-Changes should be tested by somebody other than the developer who wrote the
-code. This is especially important for large or high-risk changes. It is useful
-to add a test plan to the pull request description if testing the changes is
-not straightforward.
-
-Translations
-------------
-
-Changes to translations as well as new translations can be submitted to
-[Bitcoin Classic's Transifex page](https://www.transifex.com/bitcoinclassic/bitcoinclassic/).
-
-Translations are periodically pulled from Transifex and merged into the git repository. See the
-[translation process](doc/translation_process.md) for details on how this works.
-
-**Important**: We do not accept translation changes as GitHub pull requests because the next
-pull from Transifex would automatically overwrite them again.
+For more detailed explanations on how compile from source just look at doc/build-*.md files (e.g. [here](doc/quick-install.md))

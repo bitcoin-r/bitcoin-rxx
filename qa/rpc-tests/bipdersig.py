@@ -1,5 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 # Copyright (c) 2014-2015 The Bitcoin Core developers
+# Copyright (c) 2015-2017 The Bitcoin Unlimited developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -38,9 +39,9 @@ class BIP66Test(BitcoinTestFramework):
         if (self.nodes[0].getblockcount() != cnt + 10):
             raise AssertionError("Failed to mine 10 version=2 blocks")
 
-        # Mine 75 new-version blocks
-        for i in xrange(15):
-            self.nodes[2].generate(5)
+        # Mine 750 new-version blocks
+        for i in range(15):
+            self.nodes[2].generate(50)
         self.sync_all()
         if (self.nodes[0].getblockcount() != cnt + 85):
             raise AssertionError("Failed to mine 75 version=3 blocks")
@@ -55,9 +56,9 @@ class BIP66Test(BitcoinTestFramework):
 
         # TODO: check that new DERSIG rules are enforced
 
-        # Mine 18 new-version blocks
-        for i in xrange(2):
-            self.nodes[2].generate(9)
+        # Mine 198 new-version blocks
+        for i in range(2):
+            self.nodes[2].generate(99)
         self.sync_all()
         if (self.nodes[0].getblockcount() != cnt + 104):
             raise AssertionError("Failed to mine 18 version=3 blocks")

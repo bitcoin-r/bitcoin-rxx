@@ -1,4 +1,5 @@
 // Copyright (c) 2011-2015 The Bitcoin Core developers
+// Copyright (c) 2015-2017 The Bitcoin Unlimited developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -263,13 +264,6 @@ RPCConsole::RPCConsole(const PlatformStyle *platformStyle, QWidget *parent) :
     connect(ui->btnClearTrafficGraph, SIGNAL(clicked()), ui->trafficGraph, SLOT(clear()));
 
     // set library version labels
-
-#if (OPENSSL_VERSION_NUMBER < 0x10100000L)
-    ui->openSSLVersion->setText(SSLeay_version(SSLEAY_VERSION));
-#else
-    ui->openSSLVersion->setText(OpenSSL_version(OPENSSL_VERSION));
-#endif
-
 #ifdef ENABLE_WALLET
     ui->berkeleyDBVersion->setText(DbEnv::version(0, 0, 0));
 #else
@@ -350,6 +344,9 @@ void RPCConsole::setClientModel(ClientModel *model)
         connect(model, SIGNAL(bytesChanged(quint64,quint64)), this, SLOT(updateTrafficStats(quint64, quint64)));
 
         connect(model, SIGNAL(mempoolSizeChanged(long,size_t)), this, SLOT(setMempoolSize(long,size_t)));
+
+        // BU:
+        connect(model, SIGNAL(transactionsPerSecondChanged(double)), this, SLOT(setTransactionsPerSecond(double)));
 
         // set up peer table
         ui->peerWidget->setModel(model->getPeerTableModel());
@@ -488,7 +485,7 @@ void RPCConsole::clear()
             ).arg(fixedFontInfo.family(), ptSize)
         );
 
-    message(CMD_REPLY, (tr("Welcome to the Bitcoin Classic RPC console.") + "<br>" +
+    message(CMD_REPLY, (tr("Welcome to the Bitcoin RPC console.") + "<br>" +
                         tr("Use up and down arrows to navigate history, and <b>Ctrl-L</b> to clear screen.") + "<br>" +
                         tr("Type <b>help</b> for an overview of available commands.")), true);
 }
@@ -544,6 +541,16 @@ void RPCConsole::setMempoolSize(long numberOfTxs, size_t dynUsage)
     else
         ui->mempoolSize->setText(QString::number(dynUsage/1000000.0, 'f', 2) + " MB");
 }
+
+// BU: begin
+void RPCConsole::setTransactionsPerSecond(double nTxPerSec)
+{
+    if (nTxPerSec < 100)
+        ui->transactionsPerSecond->setText(QString::number(nTxPerSec, 'f', 2));
+    else
+        ui->transactionsPerSecond->setText(QString::number((uint64_t)nTxPerSec));
+}
+// BU: end
 
 void RPCConsole::on_lineEdit_returnPressed()
 {
@@ -814,9 +821,24 @@ void RPCConsole::disconnectSelectedNode()
 {
     // Get currently selected peer address
     QString strNode = GUIUtil::getEntryData(ui->peerWidget, 0, PeerTableModel::Address);
+
+    //BU: Enforce cs_vNodes lock held external to FindNode function calls to prevent use-after-free errors
+    CNode* bannedNode = NULL;
+    {
+        LOCK(cs_vNodes);
+        bannedNode = FindNode(strNode.toStdString());
+
+        //BU: Since we are making UI update calls below, we want to protect bannedNode from deletion
+        //    while still being able to release the lock on cs_vNodes to not block on a UI update
+        if (bannedNode) bannedNode->AddRef();
+    }
+
     // Find the node, disconnect it and clear the selected node
-    if (CNode *bannedNode = FindNode(strNode.toStdString())) {
+    //if (CNode *bannedNode = FindNode(strNode.toStdString())) {
+    if (bannedNode) {
         bannedNode->fDisconnect = true;
+        //BU: Remember to release the reference we took on bannedNode to protect from use-after-free
+        bannedNode->Release();
         clearSelectedNode();
     }
 }
@@ -828,8 +850,21 @@ void RPCConsole::banSelectedNode(int bantime)
 
     // Get currently selected peer address
     QString strNode = GUIUtil::getEntryData(ui->peerWidget, 0, PeerTableModel::Address);
+
+    //BU: Enforce cs_vNodes lock held external to FindNode function calls to prevent use-after-free errors
+    CNode* bannedNode = NULL;
+    {
+        LOCK(cs_vNodes);
+        bannedNode = FindNode(strNode.toStdString());
+
+        //BU: Since we are making UI update calls below, we want to protect bannedNode from deletion
+        //    while still being able to release the lock on cs_vNodes to not block on a UI update
+        if (bannedNode) bannedNode->AddRef();
+    }
+
     // Find possible nodes, ban it and clear the selected node
-    if (CNode *bannedNode = FindNode(strNode.toStdString())) {
+    //if (CNode *bannedNode = FindNode(strNode.toStdString())) {
+    if (bannedNode) {
         std::string nStr = strNode.toStdString();
         std::string addr;
         int port = 0;
@@ -837,6 +872,8 @@ void RPCConsole::banSelectedNode(int bantime)
 
         CNode::Ban(CNetAddr(addr), BanReasonManuallyAdded, bantime);
         bannedNode->fDisconnect = true;
+        //BU: Remember to release the reference we took on bannedNode to protect from use-after-free
+        bannedNode->Release();
         DumpBanlist();
 
         clearSelectedNode();

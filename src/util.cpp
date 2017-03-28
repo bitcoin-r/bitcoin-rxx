@@ -1,5 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2015 The Bitcoin Core developers
+// Copyright (c) 2015-2017 The Bitcoin Unlimited developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -471,9 +472,7 @@ boost::filesystem::path GetDefaultDataDir()
         pathRet = fs::path(pszHome);
 #ifdef MAC_OSX
     // Mac
-    pathRet /= "Library/Application Support";
-    TryCreateDirectory(pathRet);
-    return pathRet / "Bitcoin";
+    return pathRet / "Library/Application Support/Bitcoin";
 #else
     // Unix
     return pathRet / ".bitcoin";
@@ -835,4 +834,5 @@ int GetNumCores()
     return boost::thread::hardware_concurrency();
 #endif
 }
+
 

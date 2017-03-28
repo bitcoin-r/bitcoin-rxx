@@ -1,6 +1,50 @@
 <TS language="ru_RU" version="2.1">
 <context>
     <name>AddressBookPage</name>
+    <message>
+        <source>Create a new address</source>
+        <translation>Создать новый адрес</translation>
+    </message>
+    <message>
+        <source>&amp;New</source>
+        <translation>Новый</translation>
+    </message>
+    <message>
+        <source>Copy the currently selected address to the system clipboard</source>
+        <translation>Скопировать выделенный адрес в буфер</translation>
+    </message>
+    <message>
+        <source>&amp;Copy</source>
+        <translation>Копировать</translation>
+    </message>
+    <message>
+        <source>C&amp;lose</source>
+        <translation>Закрыть</translation>
+    </message>
+    <message>
+        <source>&amp;Copy Address</source>
+        <translation>Копировать адрес</translation>
+    </message>
+    <message>
+        <source>Delete the currently selected address from the list</source>
+        <translation>Удалить выбранный адрес из списка</translation>
+    </message>
+    <message>
+        <source>Export the data in the current tab to a file</source>
+        <translation>Экспортировать данные текущей вкладки в файл</translation>
+    </message>
+    <message>
+        <source>&amp;Export</source>
+        <translation>Экспортировать</translation>
+    </message>
+    <message>
+        <source>&amp;Delete</source>
+        <translation>Удалить</translation>
+    </message>
+    <message>
+        <source>C&amp;hoose</source>
+        <translation>Выбрать</translation>
+    </message>
     </context>
 <context>
     <name>AddressTableModel</name>
@@ -14,12 +58,12 @@
 <context>
     <name>BitcoinGUI</name>
     <message>
-        <source>Bitcoin Core</source>
-        <translation>Bitcoin Core</translation>
+        <source>Bitcoin Unlimited</source>
+        <translation>Bitcoin Unlimited</translation>
     </message>
     <message>
-        <source>&amp;About Bitcoin Core</source>
-        <translation>О Bitcoin Core</translation>
+        <source>&amp;About Bitcoin Unlimited</source>
+        <translation>О Bitcoin Unlimited</translation>
     </message>
     <message>
         <source>&amp;Command-line options</source>
@@ -81,16 +125,16 @@
 <context>
     <name>HelpMessageDialog</name>
     <message>
-        <source>Bitcoin Core</source>
-        <translation>Bitcoin Core</translation>
+        <source>Bitcoin Unlimited</source>
+        <translation>Bitcoin Unlimited</translation>
     </message>
     <message>
         <source>version</source>
         <translation>версия</translation>
     </message>
     <message>
-        <source>About Bitcoin Core</source>
-        <translation>О Bitcoin Core</translation>
+        <source>About Bitcoin Unlimited</source>
+        <translation>О Bitcoin Unlimited</translation>
     </message>
     <message>
         <source>Command-line options</source>
@@ -104,8 +148,8 @@
 <context>
     <name>Intro</name>
     <message>
-        <source>Bitcoin Core</source>
-        <translation>Bitcoin Core</translation>
+        <source>Bitcoin Unlimited</source>
+        <translation>Bitcoin Unlimited</translation>
     </message>
     <message>
         <source>Error</source>
@@ -176,8 +220,8 @@
 <context>
     <name>SplashScreen</name>
     <message>
-        <source>Bitcoin Core</source>
-        <translation>Bitcoin Core</translation>
+        <source>Bitcoin Unlimited</source>
+        <translation>Bitcoin Unlimited</translation>
     </message>
     </context>
 <context>
@@ -226,6 +270,14 @@
     </context>
 <context>
     <name>WalletView</name>
+    <message>
+        <source>&amp;Export</source>
+        <translation>Экспорт</translation>
+    </message>
+    <message>
+        <source>Export the data in the current tab to a file</source>
+        <translation>Экспортировать данные текущей вкладки в файл</translation>
+    </message>
     </context>
 <context>
     <name>bitcoin-core</name>

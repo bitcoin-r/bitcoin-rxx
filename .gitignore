@@ -43,6 +43,8 @@ src/qt/forms/ui_*.h
 
 src/qt/test/moc*.cpp
 
+Makefile.am.user
+
 .deps
 .dirstamp
 .libs
@@ -114,3 +116,7 @@ share/BitcoindComparisonTool.jar
 /doc/doxygen/
 
 libbitcoinconsensus.pc
+
+# IDE files
+*.sublime-project
+*.sublime-workspace
