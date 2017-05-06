@@ -17,6 +17,7 @@
 #include "crypto/common.h"
 #include "hash.h"
 #include "primitives/transaction.h"
+#include "requestManager.h"
 #include "scheduler.h"
 #include "ui_interface.h"
 #include "utilstrencodings.h"
@@ -88,6 +89,8 @@ uint64_t nLocalHostNonce = 0;
 static std::vector<ListenSocket> vhListenSocket;
 extern CAddrMan addrman;
 int nMaxConnections = DEFAULT_MAX_PEER_CONNECTIONS;
+int nMinXthinNodes = MIN_XTHIN_NODES;
+
 bool fAddressesInitialized = false;
 std::string strSubVersion;
 
@@ -467,8 +470,9 @@ CNode* ConnectNode(CAddress addrConnect, const char* pszDest)
 void CNode::CloseSocketDisconnect()
 {
     fDisconnect = true;
-    if (hSocket != INVALID_SOCKET) {
-        LogPrint("net", "disconnecting peer=%d\n", id);
+    if (hSocket != INVALID_SOCKET)
+    {
+        LogPrint("net", "disconnecting peer %s\n", GetLogName());
         CloseSocket(hSocket);
     }
 
@@ -495,6 +499,7 @@ void CNode::PushVersion()
     PushMessage(NetMsgType::VERSION, PROTOCOL_VERSION, nLocalServices, nTime, addrYou, addrMe,
                 nLocalHostNonce, FormatSubVersion(CLIENT_NAME, CLIENT_VERSION, BUComments),
                 nBestHeight, !GetBoolArg("-blocksonly", DEFAULT_BLOCKSONLY));
+    tVersionSent = GetTime();
 }
 
 
@@ -508,6 +513,7 @@ void CNode::ClearBanned()
     LOCK(cs_setBanned);
     setBanned.clear();
     setBannedIsDirty = true;
+    uiInterface.BannedListChanged();
 }
 
 bool CNode::IsBanned(CNetAddr ip)
@@ -563,6 +569,7 @@ void CNode::Ban(const CSubNet& subNet, const BanReason &banReason, int64_t banti
         setBanned[subNet] = banEntry;
 
     setBannedIsDirty = true;
+    uiInterface.BannedListChanged();
 }
 
 bool CNode::Unban(const CNetAddr &addr) {
@@ -575,6 +582,9 @@ bool CNode::Unban(const CSubNet &subNet) {
     if (setBanned.erase(subNet))
     {
         setBannedIsDirty = true;
+
+        SweepBanned();
+        uiInterface.BannedListChanged();
         return true;
     }
     return false;
@@ -583,6 +593,7 @@ bool CNode::Unban(const CSubNet &subNet) {
 void CNode::GetBanned(banmap_t &banMap)
 {
     LOCK(cs_setBanned);
+    SweepBanned();
     banMap = setBanned; //create a thread safe copy
 }
 
@@ -1184,21 +1195,33 @@ static void AcceptConnection(const ListenSocket& hListenSocket) {
     {
         double nConnections = 0;
         LOCK(cs_mapInboundConnectionTracker);
+        int64_t now = GetTime();
         CNetAddr ipAddress = (CNetAddr)addr;
-        if (mapInboundConnectionTracker.count(ipAddress)) {
+        if (mapInboundConnectionTracker.count(ipAddress))
+        {
             // Decay the current number of connections (over 60 seconds) depending on the last connection attempt
-            int64_t nTimeElapsed = GetTime() - mapInboundConnectionTracker[ipAddress].nLastConnectionTime;
+            int64_t nTimeElapsed = now - mapInboundConnectionTracker[ipAddress].nLastConnectionTime;
+            if (nTimeElapsed < 0) nTimeElapsed = 0;
             double nRatioElapsed = (double)nTimeElapsed / 60;
             nConnections = mapInboundConnectionTracker[ipAddress].nConnections - (nRatioElapsed * mapInboundConnectionTracker[ipAddress].nConnections);
             if (nConnections < 0) 
                 nConnections = 0;
+        }
+        else
+        {
+            ConnectionHistory ch;
+            ch.nConnections = 0.0;
+            ch.nLastConnectionTime = now;
+            ch.nEvictions = 0.0;
+            ch.nLastEvictionTime = now;
+            mapInboundConnectionTracker[ipAddress] = ch;
         }
 
         nConnections += 1;
         mapInboundConnectionTracker[ipAddress].nConnections = nConnections;
         mapInboundConnectionTracker[ipAddress].nLastConnectionTime = GetTime();
 
-        LogPrint("evict", "Number of Connection attempts is %f for %s\n", nConnections, addr.ToString());
+        LogPrint("evict", "Number of connection attempts is %f for %s\n", nConnections, addr.ToString());
         if (nConnections > 4 && !whitelisted) {
             int nHoursToBan = 4;
             CNode::Ban((CNetAddr)addr, BanReasonNodeMisbehaving, nHoursToBan*60*60);
@@ -1723,6 +1746,19 @@ void DumpAddresses()
     LogPrint("net", "Flushed %d addresses to peers.dat  %dms\n", addrman.size(), GetTimeMillis() - nStart);
 }
 
+void DumpBanlist()
+{
+    int64_t nStart = GetTimeMillis();
+
+    CBanDB bandb;
+    banmap_t banmap;
+    CNode::GetBanned(banmap);
+    bandb.Write(banmap);
+
+    LogPrint("net", "Flushed %d banned node ips/subnets to banlist.dat  %dms\n",
+             banmap.size(), GetTimeMillis() - nStart);
+}
+
 void DumpData()
 {
     DumpAddresses();
@@ -1788,12 +1824,81 @@ void ThreadOpenConnections()
 
     // Initiate network connections
     int64_t nStart = GetTime();
-    while (true) {
+    unsigned int nDisconnects = 0;
+    while (true)
+    {
         ProcessOneShot();
 
         MilliSleep(500);
 
-        CSemaphoreGrant grant(*semOutbound);
+        // Only connect out to one peer per network group (/16 for IPv4).
+        // Do this here so we don't have to critsect vNodes inside mapAddresses critsect.
+        // And also must do this before the semaphore grant so that we don't have to block
+        // if the grants are all taken and we want to disconnect a node in the event that
+        // we don't have enough connections to XTHIN capable nodes yet.
+        int nOutbound = 0;
+        int nThinBlockCapable = 0;
+        set<vector<unsigned char> > setConnected;
+        CNode* ptemp = NULL;
+        bool fDisconnected = false;
+        {
+            LOCK(cs_vNodes);
+            BOOST_FOREACH (CNode* pnode, vNodes)
+            {
+                if (pnode->fAutoOutbound) // only count outgoing connections.
+                {
+                    setConnected.insert(pnode->addr.GetGroup());
+                    nOutbound++;
+
+                    if (pnode->ThinBlockCapable())
+                        nThinBlockCapable++;
+                    else
+                        ptemp = pnode;
+                }
+            }
+            // Disconnect a node that is not XTHIN capable if all outbound slots are full and we
+            // have not yet connected to enough XTHIN nodes.
+            nMinXthinNodes = GetArg("-min-xthin-nodes", MIN_XTHIN_NODES);
+            if (nOutbound >= nMaxOutConnections &&
+                nThinBlockCapable <= min(nMinXthinNodes, nMaxOutConnections) &&
+                nDisconnects < MAX_DISCONNECTS && IsThinBlocksEnabled() && IsChainNearlySyncd())
+            {
+                if (ptemp != NULL)
+                {
+                    ptemp->fDisconnect = true;
+                    fDisconnected = true;
+                    nDisconnects++;
+                }
+            }
+        }
+
+        // If disconnected then wait for disconnection completion
+        if (fDisconnected)
+        {
+            while (true)
+            {
+                MilliSleep(500);
+                {
+                    LOCK(cs_vNodes);
+                    if (find(vNodes.begin(), vNodes.end(), ptemp) == vNodes.end())
+                        break;
+                }
+            }
+        }
+
+        // During IBD we do not actively disconnect and search for XTHIN capable nodes therefore
+        // we need to check occasionally whether IBD is complete, meaning IsChainNearlySynd() returns true.
+        // Therefore we do a try_wait() rather than wait() when aquiring the semaphore. A try_wait() is
+        // indicated by passing "true" to CSemaphore grant().
+        CSemaphoreGrant grant(*semOutbound, true);
+        if (!grant)
+        {
+            // If the try_wait() fails, meaning all grants are currently in use, then we wait for one minute
+            // to check again whether we should disconnect any nodes.  We don't have to check this too often
+            // as this is most relevant during IBD.
+            MilliSleep(60000);
+            continue;
+        }
         boost::this_thread::interruption_point();
 
         // Add seed nodes if DNS seeds are all down (an infrastructure attack?).
@@ -1810,25 +1915,10 @@ void ThreadOpenConnections()
         // Choose an address to connect to based on most recently seen
         //
         CAddress addrConnect;
-
-        // Only connect out to one peer per network group (/16 for IPv4).
-        // Do this here so we don't have to critsect vNodes inside mapAddresses critsect.
-        int nOutbound = 0;
-        set<vector<unsigned char> > setConnected;
-        {
-            LOCK(cs_vNodes);
-            BOOST_FOREACH (CNode* pnode, vNodes) {
-                if (!pnode->fInbound) {
-                    setConnected.insert(pnode->addr.GetGroup());
-                    nOutbound++;
-                }
-            }
-        }
-
         int64_t nANow = GetAdjustedTime();
-
         int nTries = 0;
-        while (true) {
+        while (true)
+        {
             CAddrInfo addr = addrman.Select();
 
             // if we selected an invalid address, restart
@@ -1858,8 +1948,18 @@ void ThreadOpenConnections()
         }
 
         if (addrConnect.IsValid())
+        {
             //Seeded outbound connections track against the original semaphore
-            OpenNetworkConnection(addrConnect, &grant);
+            if (OpenNetworkConnection(addrConnect, &grant))
+            {
+                LOCK(cs_vNodes);
+                CNode* pnode = FindNode((CService)addrConnect);
+                // We need to use a separate outbound flag so as not to differentiate these outbound 
+                // nodes with ones that were added using -addnode -connect-thinblock or -connect.
+                if (pnode)
+                    pnode->fAutoOutbound = true;
+            }
+        }
     }
 }
 
@@ -2007,14 +2107,18 @@ void ThreadMessageHandler()
             LOCK(cs_vNodes);
             vNodesCopy.reserve(vNodes.size());
             // Prefer thinBlockCapable nodes when doing communications.
-            BOOST_FOREACH(CNode* pnode, vNodes) {
-                if (pnode->ThinBlockCapable()) {
+            BOOST_FOREACH(CNode* pnode, vNodes)
+            {
+                if (pnode->ThinBlockCapable())
+                {
                     vNodesCopy.push_back(pnode);
                     pnode->AddRef();
                 }
             }
-            BOOST_FOREACH(CNode* pnode, vNodes) {
-                if (!pnode->ThinBlockCapable()) {
+            BOOST_FOREACH(CNode* pnode, vNodes)
+            {
+                if (!pnode->ThinBlockCapable())
+                {
                     vNodesCopy.push_back(pnode);
                     pnode->AddRef();
                 }
@@ -2657,7 +2761,11 @@ CNode::CNode(SOCKET hSocketIn, const CAddress& addrIn, const std::string& addrNa
     fOneShot = false;
     fClient = false; // set by version message
     fInbound = fInboundIn;
+    fAutoOutbound = false;
     fNetworkNode = false;
+    tVersionSent = -1;
+    fVerackSent = false;
+    fBUVersionSent = false;
     fSuccessfullyConnected = false;
     fDisconnect = false;
     nRefCount = 0;
@@ -2740,6 +2848,7 @@ CNode::~CNode()
     // We must set this to false on disconnect otherwise we will have trouble reconnecting -addnode nodes
     // if the remote peer restarts.
     fSuccessfullyConnected = false;
+    fAutoOutbound = false;
 
     // BUIP010 - Xtreme Thinblocks - end section
 
@@ -2974,21 +3083,6 @@ bool CBanDB::Read(banmap_t& banSet)
     }
     
     return true;
-}
-
-void DumpBanlist()
-{
-    int64_t nStart = GetTimeMillis();
-
-    CNode::SweepBanned(); //clean unused entries (if bantime has expired)
-
-    CBanDB bandb;
-    banmap_t banmap;
-    CNode::GetBanned(banmap);
-    bandb.Write(banmap);
-
-    LogPrint("net", "Flushed %d banned node ips/subnets to banlist.dat  %dms\n",
-             banmap.size(), GetTimeMillis() - nStart);
 }
 
 int64_t PoissonNextSend(int64_t nNow, int average_interval_seconds) {

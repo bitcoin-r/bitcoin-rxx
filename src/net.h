@@ -70,6 +70,10 @@ static const size_t SETASKFOR_MAX_SZ = 2 * MAX_INV_SZ;
 static const unsigned int DEFAULT_MAX_PEER_CONNECTIONS = 125;
 /** BU: The maximum numer of outbound peer connections */
 static const unsigned int DEFAULT_MAX_OUTBOUND_CONNECTIONS = 8;
+/** BU: The minimum number of xthin nodes to connect */
+static const uint8_t MIN_XTHIN_NODES = 4;
+/** BU: The maximum disconnects while searching for xthin nodes to connect */
+static const unsigned int MAX_DISCONNECTS = 500;
 /** The default for -maxuploadtarget. 0 = Unlimited */
 static const uint64_t DEFAULT_MAX_UPLOAD_TARGET = 0;
 /** Default for blocks only*/
@@ -173,7 +177,8 @@ extern CAddrMan addrman;
 
 /** Maximum number of connections to simultaneously allow (aka connection slots) */
 extern int nMaxConnections;
-
+/** The minimum number of xthin nodes to connect to */
+extern int nMinXthinNodes;
 extern std::vector<CNode*> vNodes;
 extern CCriticalSection cs_vNodes;
 extern std::map<CInv, CDataStream> mapRelay;
@@ -376,7 +381,11 @@ public:
     bool fOneShot;
     bool fClient;
     bool fInbound;
-    bool fNetworkNode;
+    bool fAutoOutbound; // any outbound node not connected with -addnode, connect-thinblock or -connect
+    bool fNetworkNode; // any outbound node
+    int64_t tVersionSent;
+    bool fVerackSent;
+    bool fBUVersionSent;
     bool fSuccessfullyConnected;
     bool fDisconnect;
     // We use fRelayTxes for two purposes -
@@ -397,7 +406,8 @@ public:
     std::vector<uint64_t> xThinBlockHashes;
     int nSizeThinBlock;   // Original on-wire size of the block. Just used for reporting
     int thinBlockWaitingForTxns;   // if -1 then not currently waiting
-    std::map<uint256, uint64_t> mapThinBlocksInFlight; // map of the hashes of thin blocks in flight with the time they were requested.
+    CCriticalSection cs_mapthinblocksinflight; // lock mapThinBlocksInFlight
+    std::map<uint256, int64_t> mapThinBlocksInFlight; // thin blocks in flight and the time requested.
     double nGetXBlockTxCount; // Count how many get_xblocktx requests are made
     uint64_t nGetXBlockTxLastTime;  // The last time a get_xblocktx request was made
     double nGetXthinCount; // Count how many get_xthin requests are made
@@ -422,6 +432,9 @@ protected:
     void Fuzz(int nChance); // modifies ssSend
 
 public:
+#ifdef DEBUG
+    friend UniValue getstructuresizes(const UniValue& params, bool fHelp);
+#endif
     uint256 hashContinue;
     int nStartingHeight;
 
@@ -751,6 +764,16 @@ public:
 
     void CloseSocketDisconnect();
 
+    //! returns the name of this node for logging.  Respects the user's choice to not log the node's IP
+    std::string GetLogName()
+    {
+        std::string idstr = boost::lexical_cast<std::string>(id);
+        if (fLogIPs)
+            return addrName + " (" + idstr + ")";
+        return idstr;
+    }
+
+
     // Denial-of-service detection/prevention
     // The idea is to detect peers that are behaving
     // badly and disconnect/ban them, but do it in a
@@ -844,7 +867,6 @@ public:
     bool Read(banmap_t& banSet);
 };
 
-void DumpBanlist();
 
 /** Return a timestamp in the future (in microseconds) for exponentially distributed events. */
 int64_t PoissonNextSend(int64_t nNow, int average_interval_seconds);

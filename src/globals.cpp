@@ -42,7 +42,7 @@
 #include <boost/thread.hpp>
 #include <inttypes.h>
 #include <queue>
-
+#include <list>
 
 using namespace std;
 
@@ -51,6 +51,8 @@ boost::mutex dd_mutex;
 std::map<std::pair<void*, void*>, LockStack> lockorders;
 boost::thread_specific_ptr<LockStack> lockstack;
 #endif
+
+
 
 // main.cpp CriticalSections:
 CCriticalSection cs_LastBlockFile;
@@ -91,6 +93,8 @@ CCriticalSection CNode::cs_totalBytesSent;
 bool fIsChainNearlySyncd;
 CCriticalSection cs_ischainnearlysyncd;
 
+CCriticalSection cs_previousblock;
+
 // critical sections from net.cpp
 CCriticalSection cs_setservAddNodeAddresses;
 CCriticalSection cs_vAddedNodes;
@@ -100,6 +104,13 @@ CCriticalSection cs_mapInboundConnectionTracker;
 CCriticalSection cs_vOneShots;
 
 CCriticalSection cs_statMap;
+
+// critical sections from expedited.cpp
+CCriticalSection cs_xpedited;
+
+// semaphore for parallel validation threads
+CCriticalSection cs_semPV;
+CSemaphore *semPV;
 
 deque<string> vOneShots;
 std::map<CNetAddr, ConnectionHistory> mapInboundConnectionTracker;
@@ -141,6 +152,7 @@ CTxMemPool mempool(::minRelayTxFee);
 boost::posix_time::milliseconds statMinInterval(10000);
 boost::asio::io_service stat_io_service;
 
+std::list<CStatBase*> mallocedStats;
 CStatMap statistics;
 CTweakMap tweaks;
 
@@ -162,21 +174,56 @@ CCriticalSection cs_orphancache;
 map<uint256, COrphanTx> mapOrphanTransactions GUARDED_BY(cs_orphancache);
 map<uint256, set<uint256> > mapOrphanTransactionsByPrev GUARDED_BY(cs_orphancache);
 
-CTweakRef<unsigned int> ebTweak("net.excessiveBlock","Excessive block size in bytes", &excessiveBlockSize,&ExcessiveBlockValidator);
-CTweak<uint64_t> blockSigopsPerMb("net.excessiveSigopsPerMb","Excessive effort per block, denoted in cost (# inputs * txsize) per MB",BLOCKSTREAM_CORE_MAX_BLOCK_SIGOPS);
-CTweak<uint64_t> blockMiningSigopsPerMb("mining.excessiveSigopsPerMb","Excessive effort per block, denoted in cost (# inputs * txsize) per MB",BLOCKSTREAM_CORE_MAX_BLOCK_SIGOPS);
-CTweak<uint64_t> coinbaseReserve("mining.coinbaseReserve","How much space to reserve for the coinbase transaction, in bytes",DEFAULT_COINBASE_RESERVE_SIZE);
-CTweakRef<std::string> miningCommentTweak("mining.comment","Include text in a block's coinbase.",&minerComment);
-CTweakRef<uint64_t> miningBlockSize("mining.blockSize","Maximum block size in bytes.  The maximum block size returned from 'getblocktemplate' will be this value minus mining.coinbaseReserve.",&maxGeneratedBlock,&MiningBlockSizeValidator);
+CTweakRef<unsigned int> ebTweak("net.excessiveBlock",
+    "Excessive block size in bytes",
+    &excessiveBlockSize,
+    &ExcessiveBlockValidator);
+CTweak<uint64_t> blockSigopsPerMb("net.excessiveSigopsPerMb",
+    "Excessive effort per block, denoted in cost (# inputs * txsize) per MB",
+    BLOCKSTREAM_CORE_MAX_BLOCK_SIGOPS);
+CTweak<uint64_t> blockMiningSigopsPerMb("mining.excessiveSigopsPerMb",
+    "Excessive effort per block, denoted in cost (# inputs * txsize) per MB",
+    BLOCKSTREAM_CORE_MAX_BLOCK_SIGOPS);
+CTweak<uint64_t> coinbaseReserve("mining.coinbaseReserve",
+    "How much space to reserve for the coinbase transaction, in bytes",
+    DEFAULT_COINBASE_RESERVE_SIZE);
+CTweakRef<std::string> miningCommentTweak("mining.comment", "Include text in a block's coinbase.", &minerComment);
+CTweakRef<uint64_t> miningBlockSize("mining.blockSize",
+    "Maximum block size in bytes.  The maximum block size returned from 'getblocktemplate' will be this value minus "
+    "mining.coinbaseReserve.",
+    &maxGeneratedBlock,
+    &MiningBlockSizeValidator);
 
-CTweak<unsigned int> maxTxSize("net.excessiveTx","Largest transaction size in bytes", DEFAULT_LARGEST_TRANSACTION);
-CTweakRef<unsigned int> eadTweak("net.excessiveAcceptDepth","Excessive block chain acceptance depth in blocks", &excessiveAcceptDepth);
-CTweakRef<int> maxOutConnectionsTweak("net.maxOutboundConnections","Maximum number of outbound connections", &nMaxOutConnections,&OutboundConnectionValidator);
-CTweakRef<int> maxConnectionsTweak("net.maxConnections","Maximum number of connections connections",&nMaxConnections);
-CTweakRef<unsigned int> triTweak("net.txRetryInterval","How long to wait in microseconds before requesting a transaction from another source", &MIN_TX_REQUEST_RETRY_INTERVAL);  // When should I request a tx from someone else (in microseconds). cmdline/bitcoin.conf: -txretryinterval
-CTweakRef<unsigned int> briTweak("net.blockRetryInterval","How long to wait in microseconds before requesting a block from another source", &MIN_BLK_REQUEST_RETRY_INTERVAL); // When should I request a block from someone else (in microseconds). cmdline/bitcoin.conf: -blkretryinterval
+CTweak<unsigned int> maxTxSize("net.excessiveTx", "Largest transaction size in bytes", DEFAULT_LARGEST_TRANSACTION);
+CTweakRef<unsigned int> eadTweak("net.excessiveAcceptDepth",
+    "Excessive block chain acceptance depth in blocks",
+    &excessiveAcceptDepth);
+CTweakRef<int> maxOutConnectionsTweak("net.maxOutboundConnections",
+    "Maximum number of outbound connections",
+    &nMaxOutConnections,
+    &OutboundConnectionValidator);
+CTweakRef<int> maxConnectionsTweak("net.maxConnections", "Maximum number of connections", &nMaxConnections);
+CTweakRef<int> minXthinNodesTweak("net.minXthinNodes",
+    "Minimum number of outbound xthin capable nodes to connect to",
+    &nMinXthinNodes);
+// When should I request a tx from someone else (in microseconds). cmdline/bitcoin.conf: -txretryinterval
+CTweakRef<unsigned int> triTweak("net.txRetryInterval",
+    "How long to wait in microseconds before requesting a transaction from another source",
+    &MIN_TX_REQUEST_RETRY_INTERVAL);
+// When should I request a block from someone else (in microseconds). cmdline/bitcoin.conf: -blkretryinterval
+CTweakRef<unsigned int> briTweak("net.blockRetryInterval",
+    "How long to wait in microseconds before requesting a block from another source",
+    &MIN_BLK_REQUEST_RETRY_INTERVAL);
 
-CTweakRef<std::string> subverOverrideTweak("net.subversionOverride","If set, this field will override the normal subversion field.  This is useful if you need to hide your node.",&subverOverride,&SubverValidator);
+CTweakRef<std::string> subverOverrideTweak("net.subversionOverride",
+    "If set, this field will override the normal subversion field.  This is useful if you need to hide your node.",
+    &subverOverride,
+    &SubverValidator);
+
+CTweak<CAmount> maxTxFee("wallet.maxTxFee",
+    "Maximum total fees to use in a single wallet transaction or raw transaction; setting this too low may abort large "
+    "transactions.",
+    DEFAULT_TRANSACTION_MAXFEE);
 
 /** Number of blocks that can be requested at any given time from a single peer. */
 CTweak<unsigned int> maxBlocksInTransitPerPeer("net.maxBlocksInTransitPerPeer","Number of blocks that can be requested at any given time from a single peer. 0 means use algorithm.",0);
